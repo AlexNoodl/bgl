@@ -3,8 +3,7 @@ export default function HomePage() {
     <main>
       <h1>BGL</h1>
       <p>
-        Скелет репозитория (INFRA-001). Настоящая главная страница с
-        подборками появится в GAME-012.
+        Main page
       </p>
     </main>
   );
