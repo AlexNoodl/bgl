@@ -1,0 +1,18 @@
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Go
+/backend/**/*.exe
+/backend/bin/
+
+# secrets / local env
+.env
+.env.local
+*.local
+
+# Node (in case a stray install happens outside apps/web)
+node_modules/
+
+docs
