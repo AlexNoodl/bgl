@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"bgl/internal/modules/auth"
 	"bgl/internal/platform/db"
 	"bgl/internal/platform/jobs"
 	"bgl/internal/platform/logging"
@@ -31,7 +32,27 @@ func main() {
 	}
 	defer pool.Close()
 
-	riverClient, err := jobs.NewWorkerClient(pool, logger)
+	var mailer auth.Mailer
+	if smtpHost := os.Getenv("SMTP_HOST"); smtpHost != "" {
+		smtpPort := os.Getenv("SMTP_PORT")
+		if smtpPort == "" {
+			smtpPort = "1025" // Mailpit's default SMTP port
+		}
+		smtpFrom := os.Getenv("SMTP_FROM")
+		if smtpFrom == "" {
+			smtpFrom = "noreply@bgl.local"
+		}
+		webBaseURL := os.Getenv("WEB_BASE_URL")
+		if webBaseURL == "" {
+			webBaseURL = "http://localhost:3000"
+		}
+		mailer = auth.NewSMTPMailer(smtpHost+":"+smtpPort, smtpFrom, webBaseURL)
+		logger.Info("worker: SMTP configured", "host", smtpHost, "port", smtpPort, "web_base_url", webBaseURL)
+	} else {
+		logger.Warn("worker: SMTP_HOST not set — verification emails will only be logged, not sent")
+	}
+
+	riverClient, err := jobs.NewWorkerClient(pool, logger, auth.RegisterWorkers(logger, mailer))
 	if err != nil {
 		logger.Error("worker: could not create river client", "error", err)
 		os.Exit(1)

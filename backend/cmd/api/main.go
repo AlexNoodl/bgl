@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"bgl/internal/modules/auth"
 	"bgl/internal/platform/db"
 	"bgl/internal/platform/httpx"
 	"bgl/internal/platform/jobs"
@@ -96,6 +97,12 @@ func main() {
 			"kind":   result.Job.Kind,
 		})
 	})
+
+	mux.HandleFunc("/v1/auth/register", auth.RegisterHandler(auth.RegisterDeps{
+		Pool:   pool,
+		Jobs:   riverClient,
+		Logger: logger,
+	}))
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "no route registered yet", "")

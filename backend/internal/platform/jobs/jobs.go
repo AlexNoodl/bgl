@@ -30,9 +30,14 @@ func (w *TestJobWorker) Work(ctx context.Context, job *river.Job[TestJobArgs]) e
 	return nil
 }
 
-func NewWorkerClient(pool *pgxpool.Pool, logger *slog.Logger) (*river.Client[pgx.Tx], error) {
+type WorkerRegistrar func(workers *river.Workers)
+
+func NewWorkerClient(pool *pgxpool.Pool, logger *slog.Logger, registrars ...WorkerRegistrar) (*river.Client[pgx.Tx], error) {
 	workers := river.NewWorkers()
 	river.AddWorker(workers, &TestJobWorker{Logger: logger})
+	for _, register := range registrars {
+		register(workers)
+	}
 
 	return river.NewClient(riverpgxv5.New(pool), &river.Config{
 		Queues: map[string]river.QueueConfig{
