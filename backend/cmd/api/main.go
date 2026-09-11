@@ -103,6 +103,10 @@ func main() {
 		Jobs:   riverClient,
 		Logger: logger,
 	}))
+	mux.HandleFunc("/v1/auth/verify-email", auth.VerifyEmailHandler(auth.VerifyEmailDeps{
+		Pool:   pool,
+		Logger: logger,
+	}))
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "no route registered yet", "")

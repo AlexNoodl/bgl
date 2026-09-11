@@ -13,7 +13,10 @@ func newOpaqueToken() (raw string, hash string, err error) {
 		return "", "", fmt.Errorf("generating random token: %w", err)
 	}
 	raw = hex.EncodeToString(buf)
+	return raw, hashToken(raw), nil
+}
+
+func hashToken(raw string) string {
 	sum := sha256.Sum256([]byte(raw))
-	hash = hex.EncodeToString(sum[:])
-	return raw, hash, nil
+	return hex.EncodeToString(sum[:])
 }
