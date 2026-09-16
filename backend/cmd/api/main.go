@@ -119,14 +119,39 @@ func main() {
 		Logger:        logger,
 		SecureCookies: secureCookies,
 	}))
+	mux.HandleFunc("/v1/auth/logout", auth.LogoutHandler(auth.LogoutDeps{
+		Pool:          pool,
+		Logger:        logger,
+		SecureCookies: secureCookies,
+	}))
+
+	// Temporary manual-verification route for AUTH-005 — exercises
+	// auth.SessionMiddleware/UserFromContext before GET /v1/me (PROFILE-002)
+	// exists. Delete once that lands.
+	mux.HandleFunc("/internal/debug/whoami", func(w http.ResponseWriter, r *http.Request) {
+		user, ok := auth.UserFromContext(r.Context())
+		if !ok {
+			httpx.WriteError(w, r, http.StatusUnauthorized, "UNAUTHENTICATED", "no active session", "")
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"id":       user.ID,
+			"email":    user.Email,
+			"username": user.Username,
+			"is_admin": user.IsAdmin,
+		})
+	})
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "no route registered yet", "")
 	})
 
+	sessionMiddleware := auth.SessionMiddleware(auth.SessionMiddlewareDeps{Pool: pool, Logger: logger})
+
 	server := &http.Server{
 		Addr:         addr,
-		Handler:      httpx.WithLogging(logger)(mux),
+		Handler:      httpx.WithLogging(logger)(sessionMiddleware(mux)),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,
