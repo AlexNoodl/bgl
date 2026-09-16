@@ -47,6 +47,11 @@ func main() {
 		logger.Warn("api: DATABASE_URL not set — /readyz will report not-ready until it is configured, and job enqueueing is disabled")
 	}
 
+	secureCookies := os.Getenv("COOKIE_SECURE") != "false"
+	if !secureCookies {
+		logger.Warn("api: COOKIE_SECURE=false — session cookies will be sent over plain HTTP, dev/LAN use only")
+	}
+
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -69,6 +74,8 @@ func main() {
 		_, _ = w.Write([]byte("ok"))
 	})
 
+	// Temporary manual-verification route for INFRA-007 — see the package
+	// doc comment above. Not a real domain endpoint.
 	mux.HandleFunc("/internal/debug/enqueue-test-job", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			httpx.WriteError(w, r, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "use POST", "")
@@ -106,6 +113,11 @@ func main() {
 	mux.HandleFunc("/v1/auth/verify-email", auth.VerifyEmailHandler(auth.VerifyEmailDeps{
 		Pool:   pool,
 		Logger: logger,
+	}))
+	mux.HandleFunc("/v1/auth/login", auth.LoginHandler(auth.LoginDeps{
+		Pool:          pool,
+		Logger:        logger,
+		SecureCookies: secureCookies,
 	}))
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {

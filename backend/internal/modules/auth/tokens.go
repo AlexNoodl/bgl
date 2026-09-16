@@ -17,6 +17,10 @@ func newOpaqueToken() (raw string, hash string, err error) {
 }
 
 func hashToken(raw string) string {
-	sum := sha256.Sum256([]byte(raw))
+	return sha256Hex(raw)
+}
+
+func sha256Hex(s string) string {
+	sum := sha256.Sum256([]byte(s))
 	return hex.EncodeToString(sum[:])
 }
