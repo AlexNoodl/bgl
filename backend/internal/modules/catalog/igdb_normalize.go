@@ -18,6 +18,7 @@ type IGDBGamePayload struct {
 	Genres            []igdbRef             `json:"genres"`
 	InvolvedCompanies []igdbInvolvedCompany `json:"involved_companies"`
 	Cover             *igdbCover            `json:"cover"`
+	Screenshots       []igdbCover           `json:"screenshots"`
 }
 
 type igdbRef struct {
@@ -89,8 +90,14 @@ func gameTypeFromIGDBCategory(category int) string {
 	return "main_game"
 }
 
+// igdbImageURL builds a full image URL from an IGDB image_id and one of
+// IGDB's documented size segments (e.g. "cover_big", "screenshot_big").
+func igdbImageURL(imageID, sizeSegment string) string {
+	return fmt.Sprintf("https://images.igdb.com/igdb/image/upload/t_%s/%s.jpg", sizeSegment, imageID)
+}
+
 func igdbCoverImageURL(imageID string) string {
-	return fmt.Sprintf("https://images.igdb.com/igdb/image/upload/t_cover_big/%s.jpg", imageID)
+	return igdbImageURL(imageID, "cover_big")
 }
 
 func NormalizeIGDBGame(raw IGDBGamePayload) NormalizedGame {

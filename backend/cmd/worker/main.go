@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"bgl/internal/modules/auth"
+	"bgl/internal/modules/catalog"
 	"bgl/internal/platform/db"
 	"bgl/internal/platform/jobs"
 	"bgl/internal/platform/logging"
@@ -52,7 +53,21 @@ func main() {
 		logger.Warn("worker: SMTP_HOST not set — verification emails will only be logged, not sent")
 	}
 
-	riverClient, err := jobs.NewWorkerClient(pool, logger, auth.RegisterWorkers(logger, mailer))
+	var igdbClient *catalog.IGDBClient
+	if igdbClientID := os.Getenv("IGDB_CLIENT_ID"); igdbClientID != "" {
+		igdbClient = catalog.NewIGDBClient(catalog.IGDBConfig{
+			ClientID:     igdbClientID,
+			ClientSecret: os.Getenv("IGDB_CLIENT_SECRET"),
+		})
+		logger.Info("worker: IGDB configured")
+	} else {
+		logger.Warn("worker: IGDB_CLIENT_ID not set — catalog import jobs will only be logged, not run")
+	}
+
+	riverClient, err := jobs.NewWorkerClient(pool, logger,
+		auth.RegisterWorkers(logger, mailer),
+		catalog.RegisterWorkers(logger, pool, igdbClient),
+	)
 	if err != nil {
 		logger.Error("worker: could not create river client", "error", err)
 		os.Exit(1)
