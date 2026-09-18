@@ -24,7 +24,7 @@ func TestLogoutHandler(t *testing.T) {
 	if err != nil {
 		t.Fatalf("creating pool: %v", err)
 	}
-	defer pool.Close()
+	t.Cleanup(pool.Close)
 
 	handler := LogoutHandler(LogoutDeps{Pool: pool, Logger: logging.New(), SecureCookies: false})
 

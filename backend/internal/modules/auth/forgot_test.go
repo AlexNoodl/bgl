@@ -14,10 +14,6 @@ import (
 	"bgl/internal/platform/logging"
 )
 
-// TestForgotPasswordHandler needs river's own tables (migrations/00002_river_tables.sql,
-// see docs/backlog.md INFRA-007) because the handler's success path calls
-// river.Client.InsertTx — same gap register_test.go documents. It still
-// exercises everything up to that point.
 func TestForgotPasswordHandler(t *testing.T) {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
@@ -93,12 +89,8 @@ func TestForgotPasswordHandler(t *testing.T) {
 			t.Fatalf("expected identical response bodies regardless of whether the account exists, got %q and %q", existing.Body.String(), unknown.Body.String())
 		}
 
-		// The InsertTx call inside the handler will fail without river's own
-		// tables (see the doc comment above), rolling the whole transaction
-		// back — so this asserts 0, not 1, until INFRA-007's migration is
-		// applied. Flip this expectation once it is.
-		if got := tokenCount(t, userID); got != 0 {
-			t.Fatalf("expected 0 tokens until INFRA-007's river migration is applied, got %d", got)
+		if got := tokenCount(t, userID); got != 1 {
+			t.Fatalf("expected exactly 1 token queued, got %d", got)
 		}
 	})
 

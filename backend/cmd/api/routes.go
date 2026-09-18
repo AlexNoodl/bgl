@@ -10,7 +10,6 @@ import (
 	"bgl/internal/modules/auth"
 	"bgl/internal/platform/db"
 	"bgl/internal/platform/httpx"
-	"bgl/internal/platform/jobs"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -43,37 +42,6 @@ func registerRoutes(mux *http.ServeMux, deps routesDeps) {
 		}
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
-	})
-
-	// Temporary manual-verification route for INFRA-007. Not a real domain
-	// endpoint — delete once a real endpoint enqueues a job.
-	mux.HandleFunc("/internal/debug/enqueue-test-job", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			httpx.WriteError(w, r, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "use POST", "")
-			return
-		}
-		if deps.RiverClient == nil {
-			httpx.WriteError(w, r, http.StatusServiceUnavailable, "NOT_READY", "DATABASE_URL is not configured", "")
-			return
-		}
-
-		message := r.URL.Query().Get("message")
-		if message == "" {
-			message = "hello from cmd/api"
-		}
-
-		result, err := deps.RiverClient.Insert(r.Context(), jobs.TestJobArgs{Message: message}, nil)
-		if err != nil {
-			httpx.WriteError(w, r, http.StatusInternalServerError, "JOB_ENQUEUE_FAILED", err.Error(), "")
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusAccepted)
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"job_id": result.Job.ID,
-			"kind":   result.Job.Kind,
-		})
 	})
 
 	mux.HandleFunc("/v1/auth/register", auth.RegisterHandler(auth.RegisterDeps{
