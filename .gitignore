@@ -6,6 +6,7 @@
 # Go
 /backend/**/*.exe
 /backend/bin/
+/backend/.env
 
 # secrets / local env
 .env

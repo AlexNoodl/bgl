@@ -22,29 +22,15 @@ CREATE TYPE jobs.river_job_state AS ENUM(
 );
 
 CREATE TABLE jobs.river_job(
-  -- 8 bytes
   id bigserial PRIMARY KEY,
-
-  -- 8 bytes (4 bytes + 2 bytes + 2 bytes)
-  --
-  -- `state` is kept near the top of the table for operator convenience -- when
-  -- looking at jobs with `SELECT *` it'll appear first after ID. The other two
-  -- fields aren't as important but are kept adjacent to `state` for alignment
-  -- to get an 8-byte block.
   state jobs.river_job_state NOT NULL DEFAULT 'available',
   attempt smallint NOT NULL DEFAULT 0,
   max_attempts smallint NOT NULL,
-
-  -- 8 bytes each (no alignment needed)
   attempted_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT NOW(),
   finalized_at timestamptz,
   scheduled_at timestamptz NOT NULL DEFAULT NOW(),
-
-  -- 2 bytes (some wasted padding probably)
   priority smallint NOT NULL DEFAULT 1,
-
-  -- types stored out-of-band
   args jsonb,
   attempted_by text[],
   errors jsonb[],
@@ -80,8 +66,6 @@ DECLARE
   payload json;
 BEGIN
   IF NEW.state = 'available' THEN
-    -- Notify will coalesce duplicate notifications within a transaction, so
-    -- keep these payloads generalized:
     payload = json_build_object('queue', NEW.queue);
     PERFORM
       pg_notify('river_insert', payload::text);
@@ -98,11 +82,8 @@ CREATE TRIGGER river_notify
   EXECUTE PROCEDURE jobs.river_job_notify();
 
 CREATE UNLOGGED TABLE jobs.river_leader(
-    -- 8 bytes each (no alignment needed)
     elected_at timestamptz NOT NULL,
     expires_at timestamptz NOT NULL,
-
-    -- types stored out-of-band
     leader_id text NOT NULL,
     name text PRIMARY KEY,
 
