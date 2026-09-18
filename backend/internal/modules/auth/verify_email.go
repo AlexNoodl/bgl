@@ -55,14 +55,7 @@ func VerifyEmailHandler(deps VerifyEmailDeps) http.HandlerFunc {
 		}
 		defer func() { _ = tx.Rollback(ctx) }()
 
-		var userID string
-		err = tx.QueryRow(ctx,
-			`UPDATE auth.verification_tokens
-			   SET used_at = now()
-			 WHERE token_hash = $1 AND purpose = 'email_verify' AND used_at IS NULL AND expires_at > now()
-			 RETURNING user_id::text`,
-			hashToken(req.Token),
-		).Scan(&userID)
+		userID, err := consumeVerificationToken(ctx, tx, req.Token, "email_verify")
 		if err != nil {
 			httpx.WriteError(w, r, http.StatusBadRequest, "INVALID_OR_EXPIRED_TOKEN", "verification link is invalid or has expired", "token")
 			return
