@@ -4,7 +4,9 @@
   "packageManager": "pnpm@12.3.4",
   "private": true,
   "scripts": {
+    "predev": "pnpm run generate:api",
     "dev": "next dev",
+    "generate:api": "node scripts/generate-api-client.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
@@ -15,28 +17,30 @@
     "format:check": "prettier --check ."
   },
   "dependencies": {
+    "clsx": "^2.1.1",
     "next": "^16.3.4",
+    "openapi-fetch": "^0.17.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "clsx": "^2.1.1",
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
-    "typescript": "^6.0.3",
+    "@eslint/eslintrc": "^3.3.7",
+    "@tailwindcss/postcss": "^4.3.3",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
     "@types/node": "^22.0.0",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
+    "@vitejs/plugin-react": "^6.1.1",
     "eslint": "^9.39.5",
     "eslint-config-next": "^16.3.4",
     "eslint-config-prettier": "^10.0.0",
-    "@eslint/eslintrc": "^3.3.7",
+    "jsdom": "^30.0.1",
+    "openapi-typescript": "^7.13.0",
     "prettier": "^3.9.6",
     "tailwindcss": "^4.3.3",
-    "@tailwindcss/postcss": "^4.3.3",
-    "vitest": "^4.1.11",
-    "@vitejs/plugin-react": "^6.1.1",
-    "jsdom": "^30.0.1",
-    "@testing-library/react": "^16.3.3",
-    "@testing-library/jest-dom": "^7.0.1"
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.11"
   }
 }

@@ -7,5 +7,5 @@ export default defineConfig([
   ...nextPlugin,
   ...nextVitals,
   ...nextTs,
-  globalIgnores([".next/**", "out/**", "build/**", "node_modules/**", "next-env.d.ts"]),
+  globalIgnores([".next/**", "out/**", "build/**", "node_modules/**", "next-env.d.ts", "lib/api/schema.d.ts"]),
 ]);

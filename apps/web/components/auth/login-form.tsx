@@ -1,9 +1,9 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { type SubmitEvent, useState } from "react";
 
-import { apiUrl } from "@/lib/api";
+import { apiClient } from "@/lib/api/client";
 
 // Временная форма авторизации
 export function LoginForm() {
@@ -11,26 +11,26 @@ export function LoginForm() {
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [welcomeMessage, setWelcomeMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: SubmitEvent) {
     event.preventDefault();
     setError(null);
+    setWelcomeMessage(null);
     setIsSubmitting(true);
 
     try {
-      const response = await fetch(apiUrl("/v1/auth/login"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ identifier, password }),
+      const { data, error: apiError } = await apiClient.POST("/v1/auth/login", {
+        body: { identifier, password },
       });
 
-      if (!response.ok) {
-        setError("Неверный email/username или пароль.");
+      if (apiError) {
+        setError(apiError.error.message);
         return;
       }
 
+      setWelcomeMessage(`Добро пожаловать, ${data.username}!`);
       router.push("/");
       router.refresh();
     } catch {
@@ -41,7 +41,7 @@ export function LoginForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+    <form onSubmit={(event) => handleSubmit(event)} className="flex flex-col gap-4">
       <div className="flex flex-col gap-1.5">
         <label htmlFor="identifier" className="text-14 font-medium text-foreground">
           Email или username
@@ -73,6 +73,7 @@ export function LoginForm() {
         />
       </div>
       {error ? <p className="text-14 text-destructive">{error}</p> : null}
+      {welcomeMessage ? <p className="text-14 text-foreground">{welcomeMessage}</p> : null}
       <button
         type="submit"
         disabled={isSubmitting}

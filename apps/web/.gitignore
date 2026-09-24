@@ -23,3 +23,7 @@ yarn-error.log*
 
 # typescript
 *.tsbuildinfo
+
+# generated OpenAPI client
+/lib/api/openapi.json
+/lib/api/schema.d.ts
