@@ -1,7 +1,7 @@
 package auth
 
 import (
-	"encoding/json"
+	"context"
 	"errors"
 	"log/slog"
 	"net"
@@ -9,8 +9,10 @@ import (
 	"strings"
 	"time"
 
+	"bgl/internal/platform/apperr"
 	"bgl/internal/platform/httpx"
 
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -47,33 +49,38 @@ type LoginDeps struct {
 	SecureCookies bool
 }
 
-func LoginHandler(deps LoginDeps) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			httpx.WriteError(w, r, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "use POST", "")
-			return
-		}
+type LoginInput struct {
+	UserAgent string `header:"User-Agent"`
+	Body      struct {
+		Identifier string `json:"identifier,omitempty"`
+		Password   string `json:"password,omitempty"`
+	}
+}
+
+type LoginOutput struct {
+	SetCookie http.Cookie `header:"Set-Cookie"`
+	Body      LoginResponse
+}
+
+func RegisterLoginOperation(api huma.API, deps LoginDeps) {
+	huma.Register(api, huma.Operation{
+		OperationID:   "loginUser",
+		Method:        http.MethodPost,
+		Path:          "/v1/auth/login",
+		DefaultStatus: http.StatusOK,
+		Tags:          []string{"auth"},
+	}, func(ctx context.Context, input *LoginInput) (*LoginOutput, error) {
 		if deps.Pool == nil {
-			httpx.WriteError(w, r, http.StatusServiceUnavailable, "NOT_READY", "DATABASE_URL is not configured", "")
-			return
+			return nil, apperr.New(ctx, http.StatusServiceUnavailable, "NOT_READY", "DATABASE_URL is not configured", "")
 		}
 
-		var req LoginRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			httpx.WriteError(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "invalid JSON body", "")
-			return
-		}
-		identifier := strings.TrimSpace(req.Identifier)
+		identifier := strings.TrimSpace(input.Body.Identifier)
 		if identifier == "" {
-			httpx.WriteError(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "identifier is required", "identifier")
-			return
+			return nil, apperr.New(ctx, http.StatusBadRequest, "VALIDATION_ERROR", "identifier is required", "identifier")
 		}
-		if req.Password == "" {
-			httpx.WriteError(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "password is required", "password")
-			return
+		if input.Body.Password == "" {
+			return nil, apperr.New(ctx, http.StatusBadRequest, "VALIDATION_ERROR", "password is required", "password")
 		}
-
-		ctx := r.Context()
 
 		var userID, email, username string
 		var passwordHash *string
@@ -85,8 +92,7 @@ func LoginHandler(deps LoginDeps) http.HandlerFunc {
 		).Scan(&userID, &email, &username, &passwordHash)
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			deps.Logger.ErrorContext(ctx, "auth: looking up user for login failed", "error", err)
-			httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "could not process login", "")
-			return
+			return nil, apperr.New(ctx, http.StatusInternalServerError, "INTERNAL_ERROR", "could not process login", "")
 		}
 
 		found := err == nil && passwordHash != nil
@@ -95,59 +101,54 @@ func LoginHandler(deps LoginDeps) http.HandlerFunc {
 			hashToCompare = *passwordHash
 		}
 
-		match, err := verifyPassword(req.Password, hashToCompare)
+		match, err := verifyPassword(input.Body.Password, hashToCompare)
 		if err != nil {
 			deps.Logger.ErrorContext(ctx, "auth: verifying password failed", "error", err)
-			httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "could not process login", "")
-			return
+			return nil, apperr.New(ctx, http.StatusInternalServerError, "INTERNAL_ERROR", "could not process login", "")
 		}
 		if !found || !match {
-			httpx.WriteError(w, r, http.StatusUnauthorized, "INVALID_CREDENTIALS", "identifier or password is incorrect", "")
-			return
+			return nil, apperr.New(ctx, http.StatusUnauthorized, "INVALID_CREDENTIALS", "identifier or password is incorrect", "")
 		}
 
 		rawToken, tokenHash, err := newOpaqueToken()
 		if err != nil {
 			deps.Logger.ErrorContext(ctx, "auth: generating session token failed", "error", err)
-			httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "could not process login", "")
-			return
+			return nil, apperr.New(ctx, http.StatusInternalServerError, "INTERNAL_ERROR", "could not process login", "")
 		}
 		expiresAt := time.Now().Add(sessionTTL)
 
 		var userAgent any
-		if ua := r.UserAgent(); ua != "" {
-			userAgent = ua
+		if input.UserAgent != "" {
+			userAgent = input.UserAgent
 		}
 
 		if _, err := deps.Pool.Exec(ctx,
 			`INSERT INTO auth.sessions (token_hash, user_id, user_agent, ip_hash, expires_at) VALUES ($1, $2, $3, $4, $5)`,
-			tokenHash, userID, userAgent, hashToken(clientIP(r)), expiresAt,
+			tokenHash, userID, userAgent, hashToken(clientIP(httpx.RemoteAddr(ctx))), expiresAt,
 		); err != nil {
 			deps.Logger.ErrorContext(ctx, "auth: creating session failed", "error", err)
-			httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "could not process login", "")
-			return
+			return nil, apperr.New(ctx, http.StatusInternalServerError, "INTERNAL_ERROR", "could not process login", "")
 		}
 
-		http.SetCookie(w, &http.Cookie{
-			Name:     SessionCookieName,
-			Value:    rawToken,
-			Path:     "/",
-			Expires:  expiresAt,
-			HttpOnly: true,
-			Secure:   deps.SecureCookies,
-			SameSite: http.SameSiteLaxMode,
-		})
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(LoginResponse{ID: userID, Email: email, Username: username})
-	}
+		return &LoginOutput{
+			SetCookie: http.Cookie{
+				Name:     SessionCookieName,
+				Value:    rawToken,
+				Path:     "/",
+				Expires:  expiresAt,
+				HttpOnly: true,
+				Secure:   deps.SecureCookies,
+				SameSite: http.SameSiteLaxMode,
+			},
+			Body: LoginResponse{ID: userID, Email: email, Username: username},
+		}, nil
+	})
 }
 
-func clientIP(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
+func clientIP(remoteAddr string) string {
+	host, _, err := net.SplitHostPort(remoteAddr)
 	if err != nil {
-		return r.RemoteAddr
+		return remoteAddr
 	}
 	return host
 }

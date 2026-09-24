@@ -26,7 +26,7 @@ func TestWriteError_LogAndResponseShareRequestID(t *testing.T) {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnprocessableEntity)
 	}
 
-	var body errorEnvelope
+	var body ErrorEnvelope
 	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
 		t.Fatalf("decoding response body: %v", err)
 	}

@@ -12,6 +12,8 @@ import (
 
 	"bgl/internal/platform/db"
 	"bgl/internal/platform/logging"
+
+	"github.com/danielgtaylor/huma/v2"
 )
 
 func TestVerifyEmailHandler(t *testing.T) {
@@ -28,7 +30,9 @@ func TestVerifyEmailHandler(t *testing.T) {
 	}
 	defer pool.Close()
 
-	handler := VerifyEmailHandler(VerifyEmailDeps{Pool: pool, Logger: logging.New()})
+	handler := newTestAPI(t, func(api huma.API) {
+		RegisterVerifyEmailOperation(api, VerifyEmailDeps{Pool: pool, Logger: logging.New()})
+	})
 
 	createUser := func(t *testing.T, email, username string) string {
 		t.Helper()
@@ -72,7 +76,7 @@ func TestVerifyEmailHandler(t *testing.T) {
 		payload, _ := json.Marshal(VerifyEmailRequest{Token: token})
 		req := httptest.NewRequest(http.MethodPost, "/v1/auth/verify-email", bytes.NewReader(payload))
 		rec := httptest.NewRecorder()
-		handler(rec, req)
+		handler.ServeHTTP(rec, req)
 		return rec
 	}
 
@@ -165,7 +169,7 @@ func TestVerifyEmailHandler(t *testing.T) {
 	t.Run("a non-POST method is rejected", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/v1/auth/verify-email", nil)
 		rec := httptest.NewRecorder()
-		handler(rec, req)
+		handler.ServeHTTP(rec, req)
 		if rec.Code != http.StatusMethodNotAllowed {
 			t.Fatalf("expected 405, got %d", rec.Code)
 		}

@@ -10,6 +10,8 @@ import (
 
 	"bgl/internal/platform/db"
 	"bgl/internal/platform/logging"
+
+	"github.com/danielgtaylor/huma/v2"
 )
 
 func TestLogoutHandler(t *testing.T) {
@@ -26,7 +28,9 @@ func TestLogoutHandler(t *testing.T) {
 	}
 	t.Cleanup(pool.Close)
 
-	handler := LogoutHandler(LogoutDeps{Pool: pool, Logger: logging.New(), SecureCookies: false})
+	handler := newTestAPI(t, func(api huma.API) {
+		RegisterLogoutOperation(api, LogoutDeps{Pool: pool, Logger: logging.New(), SecureCookies: false})
+	})
 
 	var userID string
 	if err := pool.QueryRow(ctx,
@@ -55,7 +59,7 @@ func TestLogoutHandler(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/v1/auth/logout", nil)
 		req.AddCookie(&http.Cookie{Name: SessionCookieName, Value: raw})
 		rec := httptest.NewRecorder()
-		handler(rec, req)
+		handler.ServeHTTP(rec, req)
 
 		if rec.Code != http.StatusNoContent {
 			t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
@@ -78,7 +82,7 @@ func TestLogoutHandler(t *testing.T) {
 	t.Run("logging out without a session cookie still succeeds", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/v1/auth/logout", nil)
 		rec := httptest.NewRecorder()
-		handler(rec, req)
+		handler.ServeHTTP(rec, req)
 		if rec.Code != http.StatusNoContent {
 			t.Fatalf("expected 204, got %d: %s", rec.Code, rec.Body.String())
 		}
@@ -87,7 +91,7 @@ func TestLogoutHandler(t *testing.T) {
 	t.Run("a non-POST method is rejected", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/v1/auth/logout", nil)
 		rec := httptest.NewRecorder()
-		handler(rec, req)
+		handler.ServeHTTP(rec, req)
 		if rec.Code != http.StatusMethodNotAllowed {
 			t.Fatalf("expected 405, got %d", rec.Code)
 		}

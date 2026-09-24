@@ -12,6 +12,8 @@ import (
 	"bgl/internal/platform/db"
 	"bgl/internal/platform/jobs"
 	"bgl/internal/platform/logging"
+
+	"github.com/danielgtaylor/huma/v2"
 )
 
 func TestForgotPasswordHandler(t *testing.T) {
@@ -33,7 +35,9 @@ func TestForgotPasswordHandler(t *testing.T) {
 		t.Fatalf("creating river insert client: %v", err)
 	}
 
-	handler := ForgotPasswordHandler(ForgotPasswordDeps{Pool: pool, Jobs: riverClient, Logger: logging.New()})
+	handler := newTestAPI(t, func(api huma.API) {
+		RegisterForgotPasswordOperation(api, ForgotPasswordDeps{Pool: pool, Jobs: riverClient, Logger: logging.New()})
+	})
 
 	createUser := func(t *testing.T, email, username string, deleted bool) string {
 		t.Helper()
@@ -60,7 +64,7 @@ func TestForgotPasswordHandler(t *testing.T) {
 		payload, _ := json.Marshal(ForgotPasswordRequest{Email: email})
 		req := httptest.NewRequest(http.MethodPost, "/v1/auth/password/forgot", bytes.NewReader(payload))
 		rec := httptest.NewRecorder()
-		handler(rec, req)
+		handler.ServeHTTP(rec, req)
 		return rec
 	}
 
@@ -116,7 +120,7 @@ func TestForgotPasswordHandler(t *testing.T) {
 	t.Run("a non-POST method is rejected", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/v1/auth/password/forgot", nil)
 		rec := httptest.NewRecorder()
-		handler(rec, req)
+		handler.ServeHTTP(rec, req)
 		if rec.Code != http.StatusMethodNotAllowed {
 			t.Fatalf("expected 405, got %d", rec.Code)
 		}

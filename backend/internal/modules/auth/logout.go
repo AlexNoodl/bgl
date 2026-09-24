@@ -1,12 +1,12 @@
 package auth
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"time"
 
-	"bgl/internal/platform/httpx"
-
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -16,30 +16,41 @@ type LogoutDeps struct {
 	SecureCookies bool
 }
 
-func LogoutHandler(deps LogoutDeps) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			httpx.WriteError(w, r, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "use POST", "")
-			return
-		}
+type LogoutInput struct {
+	// Value type, not *http.Cookie — huma panics on pointer-typed tagged
+	// params. Absent cookie leaves this at its zero value (Name == "").
+	SessionCookie http.Cookie `cookie:"bgl_session"`
+}
 
-		if cookie, err := r.Cookie(SessionCookieName); err == nil && deps.Pool != nil {
-			if _, err := deps.Pool.Exec(r.Context(), `DELETE FROM auth.sessions WHERE token_hash = $1`, hashToken(cookie.Value)); err != nil {
-				deps.Logger.ErrorContext(r.Context(), "auth: deleting session on logout failed", "error", err)
+type LogoutOutput struct {
+	SetCookie http.Cookie `header:"Set-Cookie"`
+}
+
+func RegisterLogoutOperation(api huma.API, deps LogoutDeps) {
+	huma.Register(api, huma.Operation{
+		OperationID:   "logoutUser",
+		Method:        http.MethodPost,
+		Path:          "/v1/auth/logout",
+		DefaultStatus: http.StatusNoContent,
+		Tags:          []string{"auth"},
+	}, func(ctx context.Context, input *LogoutInput) (*LogoutOutput, error) {
+		if input.SessionCookie.Name != "" && deps.Pool != nil {
+			if _, err := deps.Pool.Exec(ctx, `DELETE FROM auth.sessions WHERE token_hash = $1`, hashToken(input.SessionCookie.Value)); err != nil {
+				deps.Logger.ErrorContext(ctx, "auth: deleting session on logout failed", "error", err)
 			}
 		}
 
-		http.SetCookie(w, &http.Cookie{
-			Name:     SessionCookieName,
-			Value:    "",
-			Path:     "/",
-			Expires:  time.Unix(0, 0),
-			MaxAge:   -1,
-			HttpOnly: true,
-			Secure:   deps.SecureCookies,
-			SameSite: http.SameSiteLaxMode,
-		})
-
-		w.WriteHeader(http.StatusNoContent)
-	}
+		return &LogoutOutput{
+			SetCookie: http.Cookie{
+				Name:     SessionCookieName,
+				Value:    "",
+				Path:     "/",
+				Expires:  time.Unix(0, 0),
+				MaxAge:   -1,
+				HttpOnly: true,
+				Secure:   deps.SecureCookies,
+				SameSite: http.SameSiteLaxMode,
+			},
+		}, nil
+	})
 }

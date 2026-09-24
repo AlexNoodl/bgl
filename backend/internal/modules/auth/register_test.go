@@ -12,6 +12,8 @@ import (
 	"bgl/internal/platform/db"
 	"bgl/internal/platform/jobs"
 	"bgl/internal/platform/logging"
+
+	"github.com/danielgtaylor/huma/v2"
 )
 
 func TestRegisterHandler(t *testing.T) {
@@ -38,7 +40,7 @@ func TestRegisterHandler(t *testing.T) {
 		Jobs:   riverClient,
 		Logger: logging.New(),
 	}
-	handler := RegisterHandler(deps)
+	handler := newTestAPI(t, func(api huma.API) { RegisterRegisterOperation(api, deps) })
 
 	cleanupUser := func(t *testing.T, email string) {
 		t.Helper()
@@ -56,7 +58,7 @@ func TestRegisterHandler(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/v1/auth/register", bytes.NewReader(payload))
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
-		handler(rec, req)
+		handler.ServeHTTP(rec, req)
 		return rec
 	}
 
@@ -173,7 +175,7 @@ func TestRegisterHandler(t *testing.T) {
 	t.Run("a non-POST method is rejected", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/v1/auth/register", nil)
 		rec := httptest.NewRecorder()
-		handler(rec, req)
+		handler.ServeHTTP(rec, req)
 		if rec.Code != http.StatusMethodNotAllowed {
 			t.Fatalf("expected 405, got %d", rec.Code)
 		}

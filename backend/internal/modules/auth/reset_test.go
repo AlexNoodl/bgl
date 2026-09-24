@@ -12,6 +12,8 @@ import (
 
 	"bgl/internal/platform/db"
 	"bgl/internal/platform/logging"
+
+	"github.com/danielgtaylor/huma/v2"
 )
 
 func TestResetPasswordHandler(t *testing.T) {
@@ -28,7 +30,9 @@ func TestResetPasswordHandler(t *testing.T) {
 	}
 	defer pool.Close()
 
-	handler := ResetPasswordHandler(ResetPasswordDeps{Pool: pool, Logger: logging.New()})
+	handler := newTestAPI(t, func(api huma.API) {
+		RegisterResetPasswordOperation(api, ResetPasswordDeps{Pool: pool, Logger: logging.New()})
+	})
 
 	createUser := func(t *testing.T, email, username string) string {
 		t.Helper()
@@ -71,7 +75,7 @@ func TestResetPasswordHandler(t *testing.T) {
 		payload, _ := json.Marshal(ResetPasswordRequest{Token: token, NewPassword: newPassword})
 		req := httptest.NewRequest(http.MethodPost, "/v1/auth/password/reset", bytes.NewReader(payload))
 		rec := httptest.NewRecorder()
-		handler(rec, req)
+		handler.ServeHTTP(rec, req)
 		return rec
 	}
 
@@ -174,7 +178,7 @@ func TestResetPasswordHandler(t *testing.T) {
 	t.Run("a non-POST method is rejected", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/v1/auth/password/reset", nil)
 		rec := httptest.NewRecorder()
-		handler(rec, req)
+		handler.ServeHTTP(rec, req)
 		if rec.Code != http.StatusMethodNotAllowed {
 			t.Fatalf("expected 405, got %d", rec.Code)
 		}

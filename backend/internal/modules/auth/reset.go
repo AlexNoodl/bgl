@@ -1,12 +1,13 @@
 package auth
 
 import (
-	"encoding/json"
+	"context"
 	"log/slog"
 	"net/http"
 
-	"bgl/internal/platform/httpx"
+	"bgl/internal/platform/apperr"
 
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -20,71 +21,69 @@ type ResetPasswordDeps struct {
 	Logger *slog.Logger
 }
 
-func ResetPasswordHandler(deps ResetPasswordDeps) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			httpx.WriteError(w, r, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "use POST", "")
-			return
-		}
+type ResetPasswordInput struct {
+	Body struct {
+		Token       string `json:"token,omitempty"`
+		NewPassword string `json:"new_password,omitempty"`
+	}
+}
+
+type ResetPasswordOutput struct{}
+
+func RegisterResetPasswordOperation(api huma.API, deps ResetPasswordDeps) {
+	huma.Register(api, huma.Operation{
+		OperationID:   "resetPassword",
+		Method:        http.MethodPost,
+		Path:          "/v1/auth/password/reset",
+		DefaultStatus: http.StatusNoContent,
+		Tags:          []string{"auth"},
+	}, func(ctx context.Context, input *ResetPasswordInput) (*ResetPasswordOutput, error) {
 		if deps.Pool == nil {
-			httpx.WriteError(w, r, http.StatusServiceUnavailable, "NOT_READY", "DATABASE_URL is not configured", "")
-			return
+			return nil, apperr.New(ctx, http.StatusServiceUnavailable, "NOT_READY", "DATABASE_URL is not configured", "")
 		}
 
-		var req ResetPasswordRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			httpx.WriteError(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "invalid JSON body", "")
-			return
+		if input.Body.Token == "" {
+			return nil, apperr.New(ctx, http.StatusBadRequest, "VALIDATION_ERROR", "token is required", "token")
 		}
-		if req.Token == "" {
-			httpx.WriteError(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "token is required", "token")
-			return
-		}
-		if err := validatePassword(req.NewPassword); err != nil {
-			httpx.WriteError(w, r, http.StatusBadRequest, "VALIDATION_ERROR", err.Error(), "new_password")
-			return
+		if err := validatePassword(input.Body.NewPassword); err != nil {
+			return nil, apperr.New(ctx, http.StatusBadRequest, "VALIDATION_ERROR", err.Error(), "new_password")
 		}
 
-		ctx := r.Context()
 		tx, err := deps.Pool.Begin(ctx)
 		if err != nil {
 			deps.Logger.ErrorContext(ctx, "auth: begin password reset transaction failed", "error", err)
-			httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "could not process password reset", "")
-			return
+			return nil, apperr.New(ctx, http.StatusInternalServerError, "INTERNAL_ERROR", "could not process password reset", "")
 		}
 		defer func() { _ = tx.Rollback(ctx) }()
 
-		userID, err := consumeVerificationToken(ctx, tx, req.Token, "password_reset")
+		// Validate the new password (above) before consuming the token — the
+		// token must stay usable if only the password was rejected.
+		userID, err := consumeVerificationToken(ctx, tx, input.Body.Token, "password_reset")
 		if err != nil {
-			httpx.WriteError(w, r, http.StatusBadRequest, "INVALID_OR_EXPIRED_TOKEN", "reset link is invalid or has expired", "token")
-			return
+			return nil, apperr.New(ctx, http.StatusBadRequest, "INVALID_OR_EXPIRED_TOKEN", "reset link is invalid or has expired", "token")
 		}
 
-		newHash, err := hashPassword(req.NewPassword)
+		newHash, err := hashPassword(input.Body.NewPassword)
 		if err != nil {
 			deps.Logger.ErrorContext(ctx, "auth: hashing new password failed", "error", err)
-			httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "could not process password reset", "")
-			return
+			return nil, apperr.New(ctx, http.StatusInternalServerError, "INTERNAL_ERROR", "could not process password reset", "")
 		}
 
 		if _, err := tx.Exec(ctx, `UPDATE auth.users SET password_hash = $1 WHERE id = $2`, newHash, userID); err != nil {
 			deps.Logger.ErrorContext(ctx, "auth: updating password failed", "error", err)
-			httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "could not process password reset", "")
-			return
+			return nil, apperr.New(ctx, http.StatusInternalServerError, "INTERNAL_ERROR", "could not process password reset", "")
 		}
 
 		if _, err := tx.Exec(ctx, `DELETE FROM auth.sessions WHERE user_id = $1`, userID); err != nil {
 			deps.Logger.ErrorContext(ctx, "auth: revoking sessions after password reset failed", "error", err)
-			httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "could not process password reset", "")
-			return
+			return nil, apperr.New(ctx, http.StatusInternalServerError, "INTERNAL_ERROR", "could not process password reset", "")
 		}
 
 		if err := tx.Commit(ctx); err != nil {
 			deps.Logger.ErrorContext(ctx, "auth: committing password reset transaction failed", "error", err)
-			httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "could not process password reset", "")
-			return
+			return nil, apperr.New(ctx, http.StatusInternalServerError, "INTERNAL_ERROR", "could not process password reset", "")
 		}
 
-		w.WriteHeader(http.StatusNoContent)
-	}
+		return &ResetPasswordOutput{}, nil
+	})
 }

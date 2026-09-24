@@ -1,13 +1,14 @@
 package auth
 
 import (
-	"encoding/json"
+	"context"
 	"log/slog"
 	"net/http"
 	"time"
 
-	"bgl/internal/platform/httpx"
+	"bgl/internal/platform/apperr"
 
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -25,40 +26,42 @@ type VerifyEmailDeps struct {
 	Logger *slog.Logger
 }
 
-func VerifyEmailHandler(deps VerifyEmailDeps) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			httpx.WriteError(w, r, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "use POST", "")
-			return
-		}
+type VerifyEmailInput struct {
+	Body struct {
+		Token string `json:"token,omitempty"`
+	}
+}
+
+type VerifyEmailOutput struct {
+	Body VerifyEmailResponse
+}
+
+func RegisterVerifyEmailOperation(api huma.API, deps VerifyEmailDeps) {
+	huma.Register(api, huma.Operation{
+		OperationID:   "verifyEmail",
+		Method:        http.MethodPost,
+		Path:          "/v1/auth/verify-email",
+		DefaultStatus: http.StatusOK,
+		Tags:          []string{"auth"},
+	}, func(ctx context.Context, input *VerifyEmailInput) (*VerifyEmailOutput, error) {
 		if deps.Pool == nil {
-			httpx.WriteError(w, r, http.StatusServiceUnavailable, "NOT_READY", "DATABASE_URL is not configured", "")
-			return
+			return nil, apperr.New(ctx, http.StatusServiceUnavailable, "NOT_READY", "DATABASE_URL is not configured", "")
 		}
 
-		var req VerifyEmailRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			httpx.WriteError(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "invalid JSON body", "")
-			return
-		}
-		if req.Token == "" {
-			httpx.WriteError(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "token is required", "token")
-			return
+		if input.Body.Token == "" {
+			return nil, apperr.New(ctx, http.StatusBadRequest, "VALIDATION_ERROR", "token is required", "token")
 		}
 
-		ctx := r.Context()
 		tx, err := deps.Pool.Begin(ctx)
 		if err != nil {
 			deps.Logger.ErrorContext(ctx, "auth: begin verify-email transaction failed", "error", err)
-			httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "could not process verification", "")
-			return
+			return nil, apperr.New(ctx, http.StatusInternalServerError, "INTERNAL_ERROR", "could not process verification", "")
 		}
 		defer func() { _ = tx.Rollback(ctx) }()
 
-		userID, err := consumeVerificationToken(ctx, tx, req.Token, "email_verify")
+		userID, err := consumeVerificationToken(ctx, tx, input.Body.Token, "email_verify")
 		if err != nil {
-			httpx.WriteError(w, r, http.StatusBadRequest, "INVALID_OR_EXPIRED_TOKEN", "verification link is invalid or has expired", "token")
-			return
+			return nil, apperr.New(ctx, http.StatusBadRequest, "INVALID_OR_EXPIRED_TOKEN", "verification link is invalid or has expired", "token")
 		}
 
 		var email string
@@ -72,18 +75,14 @@ func VerifyEmailHandler(deps VerifyEmailDeps) http.HandlerFunc {
 		).Scan(&email, &verifiedAt)
 		if err != nil {
 			deps.Logger.ErrorContext(ctx, "auth: marking email verified failed", "error", err)
-			httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "could not process verification", "")
-			return
+			return nil, apperr.New(ctx, http.StatusInternalServerError, "INTERNAL_ERROR", "could not process verification", "")
 		}
 
 		if err := tx.Commit(ctx); err != nil {
 			deps.Logger.ErrorContext(ctx, "auth: committing verify-email transaction failed", "error", err)
-			httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "could not process verification", "")
-			return
+			return nil, apperr.New(ctx, http.StatusInternalServerError, "INTERNAL_ERROR", "could not process verification", "")
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(VerifyEmailResponse{Email: email, VerifiedAt: verifiedAt})
-	}
+		return &VerifyEmailOutput{Body: VerifyEmailResponse{Email: email, VerifiedAt: verifiedAt}}, nil
+	})
 }

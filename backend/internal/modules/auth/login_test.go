@@ -11,6 +11,8 @@ import (
 
 	"bgl/internal/platform/db"
 	"bgl/internal/platform/logging"
+
+	"github.com/danielgtaylor/huma/v2"
 )
 
 func TestLoginHandler(t *testing.T) {
@@ -27,7 +29,9 @@ func TestLoginHandler(t *testing.T) {
 	}
 	defer pool.Close()
 
-	handler := LoginHandler(LoginDeps{Pool: pool, Logger: logging.New(), SecureCookies: false})
+	handler := newTestAPI(t, func(api huma.API) {
+		RegisterLoginOperation(api, LoginDeps{Pool: pool, Logger: logging.New(), SecureCookies: false})
+	})
 
 	createUser := func(t *testing.T, email, username, password string, deleted bool) string {
 		t.Helper()
@@ -62,7 +66,7 @@ func TestLoginHandler(t *testing.T) {
 		payload, _ := json.Marshal(LoginRequest{Identifier: identifier, Password: password})
 		req := httptest.NewRequest(http.MethodPost, "/v1/auth/login", bytes.NewReader(payload))
 		rec := httptest.NewRecorder()
-		handler(rec, req)
+		handler.ServeHTTP(rec, req)
 		return rec
 	}
 
@@ -179,7 +183,7 @@ func TestLoginHandler(t *testing.T) {
 	t.Run("a non-POST method is rejected", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/v1/auth/login", nil)
 		rec := httptest.NewRecorder()
-		handler(rec, req)
+		handler.ServeHTTP(rec, req)
 		if rec.Code != http.StatusMethodNotAllowed {
 			t.Fatalf("expected 405, got %d", rec.Code)
 		}

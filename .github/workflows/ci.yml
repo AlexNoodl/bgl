@@ -26,13 +26,19 @@ jobs:
   web:
     name: Web (lint, build)
     needs: changes
-    if: needs.changes.outputs.web == 'true'
+    # Also runs on backend-only changes: the OpenAPI spec
+    # can drift on a change that never touches
+    # apps/web/**, and a stale generated client must fail this job's build.
+    if: needs.changes.outputs.web == 'true' || needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: apps/web
     steps:
       - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: backend/go.mod
       - uses: pnpm/action-setup@v6.1.0
         with:
           version: 12.3.4
@@ -42,6 +48,7 @@ jobs:
           cache: pnpm
           cache-dependency-path: apps/web/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
+      - run: pnpm run generate:api
       - run: pnpm run lint
       - run: pnpm run build
       # No `pnpm test` step yet: Vitest isn't wired up until WEB-001.

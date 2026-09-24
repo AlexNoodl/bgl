@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"bgl/internal/apiserver"
 	"bgl/internal/modules/auth"
 	"bgl/internal/platform/db"
 	"bgl/internal/platform/httpx"
@@ -44,34 +45,12 @@ func registerRoutes(mux *http.ServeMux, deps routesDeps) {
 		_, _ = w.Write([]byte("ok"))
 	})
 
-	mux.HandleFunc("/v1/auth/register", auth.RegisterHandler(auth.RegisterDeps{
-		Pool:   deps.Pool,
-		Jobs:   deps.RiverClient,
-		Logger: deps.Logger,
-	}))
-	mux.HandleFunc("/v1/auth/verify-email", auth.VerifyEmailHandler(auth.VerifyEmailDeps{
-		Pool:   deps.Pool,
-		Logger: deps.Logger,
-	}))
-	mux.HandleFunc("/v1/auth/login", auth.LoginHandler(auth.LoginDeps{
+	apiserver.BuildAPI(mux, apiserver.Deps{
 		Pool:          deps.Pool,
+		RiverClient:   deps.RiverClient,
 		Logger:        deps.Logger,
 		SecureCookies: deps.SecureCookies,
-	}))
-	mux.HandleFunc("/v1/auth/logout", auth.LogoutHandler(auth.LogoutDeps{
-		Pool:          deps.Pool,
-		Logger:        deps.Logger,
-		SecureCookies: deps.SecureCookies,
-	}))
-	mux.HandleFunc("/v1/auth/password/forgot", auth.ForgotPasswordHandler(auth.ForgotPasswordDeps{
-		Pool:   deps.Pool,
-		Jobs:   deps.RiverClient,
-		Logger: deps.Logger,
-	}))
-	mux.HandleFunc("/v1/auth/password/reset", auth.ResetPasswordHandler(auth.ResetPasswordDeps{
-		Pool:   deps.Pool,
-		Logger: deps.Logger,
-	}))
+	})
 
 	// Temporary manual-verification route for AUTH-005 — exercises
 	// auth.SessionMiddleware/UserFromContext before GET /v1/me (PROFILE-002)
@@ -91,7 +70,6 @@ func registerRoutes(mux *http.ServeMux, deps routesDeps) {
 		})
 	})
 
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		httpx.WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "no route registered yet", "")
-	})
+	// No catch-all "/" registration here — see httpx.MuxErrors, applied once
+	// around the whole mux in main.go, for why a catch-all would break 405s.
 }
